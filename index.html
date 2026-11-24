@@ -1,0 +1,111 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Smart Roster Manager</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--bd:#ddd;--pn:#f5f5f4;--ok:#d9f2e0;--of:#e2e2e8;--lv:#fde8c8;--co:#e1dcfa;--ph:#cfe3f7;--bad:#f8c9c9;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#1b1b1d;--fg:#eee;--mut:#9a9a9a;--bd:#3a3a3e;--pn:#26262a;--ok:#1f4a2e;--of:#34343a;--lv:#5a4220;--co:#40396b;--ph:#21405f;--bad:#6b2626;color-scheme:dark}}
+body{background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;margin:0;padding:12px}
+h1{font-size:18px;margin:0 0 8px}h3{margin:14px 0 6px}
+.bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+button,select,input{font:inherit;color:var(--fg);background:var(--pn);border:1px solid var(--bd);border-radius:6px;padding:4px 8px}button{cursor:pointer}
+.w{overflow-x:auto;border:1px solid var(--bd);border-radius:6px;max-height:60vh}
+table{border-collapse:collapse;font-size:12px}td,th{border:1px solid var(--bd);padding:2px 4px;text-align:center;min-width:26px}
+td.n,th.n{text-align:left;position:sticky;left:0;background:var(--bg);min-width:170px;white-space:nowrap;z-index:1}
+small{display:block;color:var(--mut);font-size:10px}
+.W,.ok{background:var(--ok)}.O{background:var(--of)}.L{background:var(--lv)}.C{background:var(--co)}.H,.ph{background:var(--ph)}.bad{background:var(--bad);font-weight:700}
+td.W,td.O,td.L,td.C,td.H{cursor:pointer}
+.cards{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.cards div{background:var(--pn);border:1px solid var(--bd);border-radius:6px;padding:6px 10px}
+.is{padding:5px 8px;border-left:4px solid #c33;background:var(--pn);margin:3px 0;border-radius:4px}.is.warn{border-color:#d90}.is button{margin-left:4px;font-size:12px}
+#msg{background:var(--lv);padding:6px 10px;border-radius:6px;margin:6px 0}#msg:empty{display:none}
+.lg span{padding:1px 8px;margin-right:4px;border-radius:4px;border:1px solid var(--bd)}
+</style></head><body>
+<h1>Smart Roster Manager</h1>
+<div class="bar"><input type="month" id="mo" onchange="S.month=this.value;gen()">
+<select id="vw" onchange="S.view=this.value;render()"><option value="co">Company view</option><option value="pod">Pod view</option><option value="brand">Brand view</option><option value="proc">Process view</option><option value="emp">Employee view</option></select>
+<select id="fl" onchange="S.f=this.value;render()"></select>
+<button onclick="gen()">Generate roster</button><button onclick="demo()">Simulate a change</button><button onclick="tabSetup=!tabSetup;render()">Setup / rules</button><button onclick="localStorage.removeItem('roster1');init(1)">Reset sample</button></div>
+<div id="msg"></div><div id="st"></div>
+<div class="lg"><span class="W">W work</span><span class="O">O weekly off</span><span class="L">L leave</span><span class="C">C comp-off</span><span class="H">H closed day (PH/Sun)</span> click a cell to cycle O, L, C. W* = covering another process</div>
+<div id="main"></div>
+<script>
+const $=s=>document.getElementById(s),D=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const CAL={'365':'365 days','DNH':'Daily, PH off','SNH':'Mon-Sat, Sun+PH off'};
+let S,E,P,tabSetup=false;
+function seed(){
+ const pods=[['Alpha','Riya Mehta'],['Beta','Karan Shah'],['Gamma','Neha Iyer'],['Delta','Imran Qureshi']].map(([id,lead])=>({id,lead}));
+ const nm='Aarav Diya Vihaan Anaya Rohan Isha Kabir Meera Arjun Sana Yash Tara Dev Nisha Rahul Pooja Aditya Simran Varun Kavya Manav Ritu Sahil Zoya Harsh Preeti Nikhil Anjali Omkar Sneha'.split(' ');
+ const br='Zaara Kiko Bloom Urbane Nutra Loom Glow Veda Aura Pixel Ember Mint Nomad Olive Pebble Quill Rustic Saffron Tulsi Umbra Velvet Wick Yara Zest'.split(' ');
+ const P=[],E=[];
+ const p=(b,pr,cal,min=1)=>{P.push({id:b+'|'+pr,brand:b,proc:pr,cal,min,mw:null});return b+'|'+pr};
+ const e=a=>{const n=E.length,b=a.length?br.indexOf(a[0].split('|')[0]):n;E.push({id:'e'+n,name:nm[n]+' '+'Nair Rao Das Khan Joshi Patil Sen'.split(' ')[n%7],pod:pods[b%4].id,pref:n%3?n%7:0,as:a})};
+ [['Zaara','365','SNH','DNH'],['Kiko','DNH','SNH','SNH']].forEach(([b,c,a,n])=>{const C=p(b,'CS',c),A=p(b,'ACC',a),N=p(b,'NDR',n);e([C,N]);e([C,A]);e([A,N])});
+ let C=p('Bloom','CS','365'),A=p('Bloom','Retention','SNH');e([C]);e([C,A]);
+ C=p('Urbane','CS','DNH');A=p('Urbane','ACC','SNH');e([C]);e([C,A]);
+ C=p('Nutra','CS','365',2);A=p('Nutra','ACC','SNH');e([C]);e([C]);e([C,A]);
+ const sc=i=>i==10?'365':i%6==1?'DNH':'SNH',mk=i=>{const x=[p(br[i],'CS',sc(i))];if(i%3==0)x.push(p(br[i],'ACC','SNH'));return x};
+ for(let i=5;i<24;){if(i<=12){e([...mk(i),...mk(i+1)]);i+=2}else{e(mk(i));i++}}
+ e([]);e([]);
+ return{month:'2026-12',pods,P,E,hol:['2026-12-25','2027-01-01','2027-01-26'],mark:{'e13|2026-12-14':'L','e1|2026-12-18':'C','e5|2026-12-09':'L'},cov:{},view:'co',f:''}
+}
+const bind=()=>{E=S.E;P=S.P},save=()=>{try{localStorage.setItem('roster1',JSON.stringify(S))}catch(x){}};
+const key=(e,d)=>e+'|'+d,ds=(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+function days(){const[y,m]=S.month.split('-').map(Number);return[...Array(new Date(y,m,0).getDate())].map((_,i)=>({d:i+1,s:ds(y,m-1,i+1),w:new Date(y,m-1,i+1).getDay()}))}
+function weeks(){const w=[];days().forEach(d=>{if(!w.length||d.w==1)w.push([d]);else w[w.length-1].push(d)});return w}
+const isH=s=>S.hol.includes(s);
+const open=(p,d)=>p.cal=='365'||(p.cal=='DNH'&&!isH(d.s))||(p.cal=='SNH'&&!isH(d.s)&&d.w!=0);
+const need=(p,d)=>!open(p,d)?0:((d.w%6==0&&p.mw!=null)?p.mw:p.min);
+const procs=e=>e.as.map(id=>P.find(p=>p.id==id)).filter(Boolean);
+function status(e,d){const m=S.mark[key(e.id,d.s)];if(m)return m;const ps=procs(e);return ps.length&&!ps.some(p=>open(p,d))?'H':'W'}
+const cover=(p,d)=>E.filter(e=>e.as.includes(p.id)&&status(e,d)=='W').length+(S.cov[d.s]||[]).filter(x=>x.proc==p.id).length;
+function gen(){
+ Object.keys(S.mark).forEach(k=>{if(S.mark[k]=='O')delete S.mark[k]});S.cov={};
+ const load={};days().forEach(d=>load[d.s]=0);
+ weeks().forEach(wk=>{if(wk.length<4)return;
+  E.forEach(e=>{if(wk.some(d=>status(e,d)!='W'))return;
+   const c=wk.map(d=>[procs(e).filter(p=>need(p,d)&&cover(p,d)-1<need(p,d)).length,d.w==e.pref?0:1,load[d.s],d]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]||a[2]-b[2])[0];
+   S.mark[key(e.id,c[3].s)]='O';load[c[3].s]++})});
+ save();render()}
+function suggest(p,d){const r=[];
+ E.forEach(e=>{if(e.as.includes(p.id)){if(S.mark[key(e.id,d.s)]=='O')r.push({t:`Ask ${e.name} to swap weekly off`,k:0})}
+ else if(status(e,d)=='W'&&!(S.cov[d.s]||[]).some(x=>x.emp==e.id)&&procs(e).every(q=>cover(q,d)>need(q,d)))r.push({t:`Cover: ${e.name} (${e.as.length?e.pod+' pod':'bench'})`,e,p,d,k:e.as.length?2:1})});
+ return r.sort((a,b)=>a.k-b.k).slice(0,3)}
+function validate(){const I=[],D_=days();
+ P.forEach(p=>D_.forEach(d=>{const n=need(p,d),c=cover(p,d);if(c<n)I.push({sev:'error',d,msg:`${p.brand} / ${p.proc}: need ${n}, have ${c}`,sug:suggest(p,d)})}));
+ weeks().forEach(wk=>{if(wk.length>=4)E.forEach(e=>{if(!wk.some(d=>status(e,d)!='W'))I.push({sev:'warn',d:wk[0],msg:`${e.name} has no weekly off in week of ${wk[0].d}`,sug:[]})})});
+ D_.forEach(d=>E.forEach(e=>{if(status(e,d)!='W')return;const b=new Set(procs(e).filter(p=>need(p,d)&&cover(p,d)<=need(p,d)).map(p=>p.brand));if(b.size>1)I.push({sev:'warn',d,msg:`${e.name} is sole cover for ${[...b].join(' + ')} (double-booked)`,sug:[]})}));
+ return I}
+const cyc=(e,s)=>{const k=key(e,s),n={undefined:'O',O:'L',L:'C',C:undefined}[S.mark[k]];n?S.mark[k]=n:delete S.mark[k];save();render()};
+const ap=(e,p,s)=>{(S.cov[s]=S.cov[s]||[]).push({emp:e,proc:p});save();render()};
+function demo(){const e=E.find(x=>x.id=='e20'),d=days().find(d=>d.d>=8&&status(e,d)=='W');if(!d)return;S.mark[key(e.id,d.s)]='L';save();render();
+ $('msg').textContent=`Change applied: ${e.name} (sole owner of ${e.as.join(', ')}) now on leave on ${d.d} ${D[d.w]}. See the new coverage gap and backup suggestions below.`}
+function render(){
+ if(tabSetup){$('main').innerHTML=setup();$('st').innerHTML='';return}
+ $('mo').value=S.month;$('vw').value=S.view;const I=validate(),V=S.view,D_=days();
+ const fo={co:[],pod:S.pods.map(p=>p.id),brand:[...new Set(P.map(p=>p.brand))],proc:P.map(p=>p.id),emp:E.map(e=>e.id)}[V];
+ if(V!='co'&&!fo.includes(S.f))S.f=fo[0];
+ $('fl').innerHTML=fo.map(x=>`<option ${x==S.f?'selected':''} value="${x}">${V=='emp'?E.find(e=>e.id==x).name:x}</option>`).join('');$('fl').hidden=V=='co';
+ const f=S.f;let es=V=='pod'?E.filter(e=>e.pod==f):V=='brand'?E.filter(e=>procs(e).some(p=>p.brand==f)):V=='proc'?E.filter(e=>e.as.includes(f)):V=='emp'?E.filter(e=>e.id==f):E;
+ let ps=V=='co'?P:P.filter(p=>es.some(e=>e.as.includes(p.id)));if(V=='brand')ps=ps.filter(p=>p.brand==f);if(V=='proc')ps=ps.filter(p=>p.id==f);
+ let o=0,t=0;E.forEach(e=>D_.forEach(d=>{if(S.mark[key(e.id,d.s)]=='O'){t++;if(d.w==e.pref)o++}}));
+ const er=I.filter(i=>i.sev=='error').length,wn=I.length-er;
+ $('st').innerHTML=`<div class="cards"><div><b>${E.length}</b> employees</div><div><b>${new Set(P.map(p=>p.brand)).size}</b> brands / <b>${P.length}</b> processes</div><div style="color:${er?'#c33':'inherit'}"><b>${er}</b> coverage gaps (mandatory)</div><div><b>${wn}</b> warnings</div><div>Preferred weekly off honoured: <b>${o}/${t}</b> (soft)</div></div>`;
+ const hd=D_.map(d=>`<th class="${isH(d.s)?'ph':''}">${d.d}<small>${D[d.w].slice(0,2)}</small></th>`).join('');
+ let h=`<div class="w"><table><tr><th class="n">Employee</th>${hd}</tr>`;
+ es.forEach(e=>{h+=`<tr><td class="n">${e.name}<small>${e.pod} pod · ${e.as.map(x=>x.replace('|',' ')).join(', ')||'bench'}</small></td>`+D_.map(d=>{const s=status(e,d),cv=(S.cov[d.s]||[]).some(x=>x.emp==e.id);return`<td class="${s}" onclick="cyc('${e.id}','${d.s}')">${s=='W'&&cv?'W*':s}</td>`}).join('')+'</tr>'});
+ h+=`<tr><th class="n" colspan="${D_.length+1}">Coverage (have/need)</th></tr>`;
+ ps.forEach(p=>{h+=`<tr><td class="n">${p.brand} / ${p.proc}<small>${CAL[p.cal]}</small></td>`+D_.map(d=>{const n=need(p,d),c=cover(p,d);return n?`<td class="${c<n?'bad':'ok'}">${c}/${n}</td>`:'<td>-</td>'}).join('')+'</tr>'});
+ h+='</table></div><h3>Conflicts and flags</h3>'+(I.length?I.slice(0,60).map(i=>`<div class="is ${i.sev}"><b>${i.d.d} ${D[i.d.w]}</b> ${i.msg}${i.sug.length?i.sug.map(s=>s.e?` <button onclick="ap('${s.e.id}','${s.p.id}','${s.d.s}')">${s.t}</button>`:` <i>${s.t}</i>`).join(''):i.sev=='error'?' <i>No spare resource: add backup or relax rule</i>':''}</div>`).join('')+(I.length>60?`<p>+${I.length-60} more</p>`:''):'<p>No conflicts. Roster is valid.</p>');
+ $('main').innerHTML=h}
+function setup(){const op=(a,v)=>a.map(x=>`<option ${x==v?'selected':''}>${x}</option>`).join('');
+ let h='<h3>Process rules</h3><div class="w"><table><tr><th>Brand<th>Process<th>Calendar<th>Min staff<th>Min Sat/Sun<th></tr>';
+ P.forEach((p,i)=>h+=`<tr><td>${p.brand}<td>${p.proc}<td><select onchange="up(${i},'cal',this.value)">${Object.keys(CAL).map(k=>`<option value="${k}" ${k==p.cal?'selected':''}>${CAL[k]}</option>`).join('')}</select><td><input type="number" min="0" style="width:50px" value="${p.min}" onchange="up(${i},'min',this.value)"><td><input type="number" min="0" style="width:50px" value="${p.mw??''}" onchange="up(${i},'mw',this.value)"><td><button onclick="dp(${i})">x</button>`);
+ h+='</table></div><p><input id="nb" placeholder="Brand"> <input id="np" placeholder="Process"> <button onclick="addP()">Add process</button></p><h3>Employees and assignments</h3><div class="w"><table><tr><th>Name<th>Pod<th>Pref off<th>Assignments (Brand|Process, ...)<th></tr>';
+ E.forEach((e,i)=>h+=`<tr><td><input value="${e.name}" onchange="ue(${i},'name',this.value)"><td><select onchange="ue(${i},'pod',this.value)">${op(S.pods.map(p=>p.id),e.pod)}</select><td><select onchange="ue(${i},'pref',this.value)">${D.map((x,j)=>`<option value="${j}" ${j==e.pref?'selected':''}>${x}</option>`).join('')}</select><td><input size="46" value="${e.as.join(', ')}" onchange="ue(${i},'as',this.value)"><td><button onclick="de(${i})">x</button>`);
+ return h+`</table></div><p><button onclick="E.push({id:'e'+Date.now(),name:'New Employee',pod:S.pods[0].id,pref:0,as:[]});save();render()">Add employee</button></p><p>Pods: ${S.pods.map(p=>p.id+' (lead '+p.lead+')').join(', ')}</p><h3>Public holidays (YYYY-MM-DD, comma separated)</h3><input size="60" value="${S.hol.join(', ')}" onchange="S.hol=this.value.split(',').map(x=>x.trim()).filter(Boolean);save()"><p>After editing rules, return and press Generate roster, or just review flags: validation updates instantly.</p>`}
+const up=(i,k,v)=>{P[i][k]=k=='cal'?v:v===''?null:+v;save();render()};
+const ue=(i,k,v)=>{E[i][k]=k=='as'?v.split(',').map(x=>x.trim()).filter(x=>P.some(p=>p.id==x)):k=='pref'?+v:v;save();render()};
+const dp=i=>{const id=P[i].id;P.splice(i,1);E.forEach(e=>e.as=e.as.filter(x=>x!=id));save();render()};
+const de=i=>{E.splice(i,1);save();render()};
+const addP=()=>{const b=$('nb').value.trim(),n=$('np').value.trim();if(b&&n&&!P.some(p=>p.id==b+'|'+n)){P.push({id:b+'|'+n,brand:b,proc:n,cal:'SNH',min:1,mw:null});save();render()}};
+function init(r){S=r?null:(()=>{try{return JSON.parse(localStorage.getItem('roster1'))}catch(x){return null}})();if(!S){S=seed();bind();gen()}else{bind();render()}}
+init();
+</script></body></html>
